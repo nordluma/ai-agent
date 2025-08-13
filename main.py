@@ -23,6 +23,8 @@ When a user asks a question or makes a request, make a function call plan. You c
 All paths you provide should be relative to the working directory. You do not need to specify the working directory in your function calls as it is automatically injected for security reasons.
 """
 
+MAX_ITERS = 20
+
 available_functions = types.Tool(
     function_declarations=[
         schema_get_files_info,
@@ -48,11 +50,29 @@ def main():
     if verbose:
         print(f"User prompt: {user_prompt}")
 
-    messages = [types.Content(role="user", parts=[types.Part(text=user_prompt)])]
-    generate_content(client, messages, verbose)
+    messages = [
+        types.Content(role="user", parts=[types.Part(text=user_prompt)]),
+    ]
+
+    iters = 0
+    while True:
+        iters += 1
+        if iters > MAX_ITERS:
+            print(f"Maximum iterations ({MAX_ITERS}) reached.")
+            sys.exit(1)
+
+        try:
+            final_response = generate_content(client, messages, verbose)
+            if final_response:
+                print("Final response:")
+                print(final_response)
+                break
+        except Exception as e:
+            print(f"error generating response: {e}")
+            sys.exit(1)
 
 
-def generate_content(client, messages, verbose):
+def generate_content(client: genai.Client, messages: list[types.Content], verbose):
     response = client.models.generate_content(
         model="gemini-2.0-flash-001",
         contents=messages,
@@ -65,10 +85,16 @@ def generate_content(client, messages, verbose):
         print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
         print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
 
-    if not response.function_calls:
-        return response.text
+    if response.candidates:
+        for candidate in response.candidates:
+            fn_call_content = candidate.content
+            if fn_call_content:
+                messages.append(fn_call_content)
 
-    fn_responses = []
+    if not response.function_calls:
+        return response.text or "unknown response"
+
+    fn_responses: list[types.Part] = []
     for fn_call_part in response.function_calls:
         fn_call_result = call_function(fn_call_part, verbose)
         if not fn_call_result.parts or not fn_call_result.parts[0].function_response:
@@ -80,6 +106,8 @@ def generate_content(client, messages, verbose):
 
     if not fn_responses:
         raise Exception("no function responses generated")
+
+    messages.append(types.Content(role="user", parts=fn_responses))
 
 
 def call_function(fn_call_part: types.FunctionCall, verbose=False):
@@ -107,9 +135,10 @@ def call_function(fn_call_part: types.FunctionCall, verbose=False):
             ],
         )
 
-    args = dict(fn_call_part.args or {})
-    args["working_directory"] = "./calculator"
+    args = {"working_directory": "./calculator"}
+    args.update(dict(fn_call_part.args or {}))
     fn_result = fn_map[fn_name](**args)
+
     return types.Content(
         role="tool",
         parts=[
