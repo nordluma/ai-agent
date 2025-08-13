@@ -9,10 +9,6 @@ schema_run_python_file = types.FunctionDeclaration(
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
-            "directory": types.Schema(
-                type=types.Type.STRING,
-                description="The directory to execute the python file from, relative to the working directory",
-            ),
             "file_path": types.Schema(
                 type=types.Type.STRING,
                 description="The name of the python file to execute",
@@ -22,9 +18,9 @@ schema_run_python_file = types.FunctionDeclaration(
 )
 
 
-def run_python_file(working_dir, file_path, args=None):
-    abs_working_dir = os.path.abspath(working_dir)
-    abs_file_path = os.path.abspath(os.path.join(working_dir, file_path))
+def run_python_file(working_directory, file_path, args=None):
+    abs_working_dir = os.path.abspath(working_directory)
+    abs_file_path = os.path.abspath(os.path.join(working_directory, file_path))
     if not abs_file_path.startswith(abs_working_dir):
         return f'Error: Cannot execute "{file_path}" as it is outside the permitted working directory'
     if not os.path.exists(abs_file_path):
